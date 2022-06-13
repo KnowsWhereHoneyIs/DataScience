@@ -1,0 +1,210 @@
+---
+title: "Humor Vs. Horror"
+author: "William Lovejoy"
+date: "4/11/2022"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(tidytext)
+library(rvest)
+library(reshape2)
+library(wordcloud)
+```
+
+## Core Question
+
+Comedy and horror are often described as incredibly similar. To be successful, 
+both need an understanding of the core emotional drivers in human psychology.
+And both tend to rely on subverting expectations to achieve their goals. With 
+this in mind, how similar are the sentiments percieved in the respective texts
+of a comedy and a horror book? And how similar might the reviews of those books
+be?
+
+To start with, our books were chosen from the 2021 Goodreads Choice Awards for
+comedy and horror, and the comments were scraped from the books' Goodreads page.
+
+For comedy: we have *Broken* by Jenny Lawson
+For horror: we have *The Final Girl Support Group* by Grady Hendrix
+
+```{r Scraping}
+horrorURL <- "https://www.goodreads.com/book/show/55829194-the-final-girl-support-group?from_choice=true"
+humorURL <-  "https://www.goodreads.com/book/show/54305363-broken?from_choice=true"
+horrorPage <- read_html(horrorURL)
+humorPage <- read_html(humorURL)
+
+
+horrorCommentNodes <- html_nodes(horrorPage, '#bookReviews .readable span')
+horrorComments <- html_text(horrorCommentNodes)
+horrorComments <- gsub("\\\\", "", gsub("’", "'", horrorComments))
+
+humorCommentNodes <- html_nodes(humorPage, '#bookReviews .readable span')
+humorComments <- html_text(humorCommentNodes)
+humorComments <- gsub("\\\\", "", gsub("’", "'", humorComments))
+```
+
+Our scraped comment data had some text issues that needed to be cleaned, but we
+were left with 58 comments for each book. Next up, we can add the book title and
+comments to dataframes and then bind them together with rbind().
+
+```{r df}
+df1 <- data.frame(CommentNumber = 1:length(horrorComments),
+                  Book = "The Final Girl Support Group",
+                  Comments = horrorComments)
+df2 <- data.frame(CommentNumber = 1:58,
+                  Book = "Broken",
+                  Comments = humorComments)
+
+df <- rbind(df1, df2)
+```
+
+
+## Comment EDA
+
+Now that our comments are loaded, sorted, and labeled: we can unnest them and
+make quick wordclouds and run our sentiment analysis using the Bing et al. 
+lexicon.
+
+```{r CommentEDA, message=FALSE, error=FALSE}
+tidy_df <- df %>%
+  unnest_tokens(word, Comments)
+
+subset(tidy_df, Book == "The Final Girl Support Group")  %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, scale = c(3, .4), max.words = 75))
+
+subset(tidy_df, Book == "Broken")  %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, scale = c(2.5, .4), max.words = 75))
+
+df_sentiments <- tidy_df %>%
+  inner_join(get_sentiments("bing")) %>%
+  group_by(Book) %>%
+  count(index = CommentNumber, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment = positive - negative) %>%
+  ungroup()
+
+ggplot(df_sentiments, aes(x = index, y = sentiment, fill = Book)) + 
+  geom_col(show.legend = FALSE) + facet_wrap(~ Book, ncol = 1) +
+  xlab("Index") + ylab("Sentiment") +
+  labs(title = "Comment Bing et al. Sentiment Analysis")
+```
+
+We can see that comments about *Broken* tend to mention the author, while 
+*The Final Girl Support Group* tends to mention the book. We can also see fairly
+even distributions of sentiments between the books, with each column in the plot
+representing an individual comment. So now we can get into the texts themselves.
+
+## Text Analysis
+
+We start by loading in our text files, removing extra symbols, and changing 
+apostrophes to single quotes. I also removed the lines with information about 
+the publisher and copywrites because they won't be needed for the analysis. Then
+we add in the book title to our dataframes and use head() to make sure that 
+both dataframes look clean.
+
+```{r ImportAndClean, warning=FALSE, message=FALSE}
+broken <- read_delim("C:\\Users\\William Lovejoy\\Documents\\Codes\\R\\DataScience\\Epubs\\broken.txt",
+                     delim = "\n")
+girl <- read_delim("C:\\Users\\William Lovejoy\\Documents\\Codes\\R\\DataScience\\Epubs\\the-final-girl-support-group.txt",
+                   delim = "\n")
+girl$Text <- gsub("\t", "", girl$Text)
+
+broken <- broken %>%
+  mutate(linenumber = row_number()) %>%
+  ungroup()
+
+girl <- girl %>%
+  mutate(linenumber = row_number()) %>%
+  ungroup()
+
+broken_tidy <- broken %>%
+  unnest_tokens(word, Text)
+broken_tidy$word <- gsub("’", "'", broken_tidy$word)
+
+girl_tidy <- girl %>%
+  unnest_tokens(word, Text)
+girl_tidy$word <- gsub("’", "'", girl_tidy$word)
+
+girl_tidy <- girl_tidy[-c(1:106), ]
+broken_tidy <- broken_tidy[-c(6:113), ]
+girl_tidy$Book <- "The Final Girl Support Group"
+broken_tidy$Book <- "Broken"
+
+head(girl_tidy)
+head(broken_tidy)
+```
+
+### Graphics
+
+Now that we have the texts loaded in and unnested into our tokens, we can being 
+making graphics.
+
+```{r TextGraphics, warning=FALSE, message= FALSE}
+girl_tidy %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, scale = c(5, 1), max.words = 125))
+
+broken_tidy %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, scale = c(3, .3), max.words = 125))
+
+texts <- rbind(girl_tidy, broken_tidy)
+texts$Book <- as.factor(texts$Book)
+
+texts %>%
+  anti_join(stop_words) %>%
+  count(word, Book) %>%
+  acast(word ~ Book, value.var = "n", fill = 0) %>%
+  comparison.cloud(random.order = FALSE, scale = c(5, .4), colors = c("blue2", "firebrick"),
+                   max.words = 150)
+```
+
+Our individual wordclouds' let us see the more common words in each book, while 
+our comparative cloud let's us look at word frequency between the two books. We 
+can see that frequent words in *The Final Girl Support Group* tend to be names, 
+whereas *Broken* has a largely balanced frequency distribution among varied 
+topics.
+
+```{r TextSentiments, message=FALSE, warning=FALSE}
+texts_sentiment <- texts %>%
+  inner_join(get_sentiments("bing")) %>%
+  group_by(Book) %>%
+  count(index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment = positive - negative) %>%
+  ungroup()
+
+ggplot(texts_sentiment, aes(x = index, y = sentiment, fill = Book)) + 
+  geom_col(show.legend = FALSE) + 
+  facet_wrap(~ Book, ncol = 1, scales = "free_x") +
+  xlab("Index") + ylab("Sentiment") +
+  labs(title = "Comparative Bing et al. Sentiment Analysis")
+
+```
+
+Both books contain words commonly perceived as negative for the bulk of their 
+stories. There are only 5 instances in *Broken* of a section having an overall
+positive sentiment, and 3 in *The Final Girl Support Group*. The sentimental
+rise and fall of each book even occurs in similar places along the story. 
+
+## Conclusion
+
+By comparing the sentiments of both the webscraped comments about our selected 
+books and the books themselves, we've seen similar trends in both groups. 
+Sentimentally, comments about both books were fairly even across the sample, and
+varied largely by individual. Neither book has an overwhelmingly large number of
+comments with positive or negative sentiments attached. For the texts 
+themselves, we can see almost identical shifts in sentiment. Yet with such a
+strong similarity, they are very distinct genres. This lends strong evidence to 
+state that the line between horror and comedy is thin, and the genres are more 
+alike than they are different.
+
