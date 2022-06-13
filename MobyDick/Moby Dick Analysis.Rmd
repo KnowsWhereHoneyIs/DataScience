@@ -1,0 +1,183 @@
+---
+title: "Moby Dick Text Analysis"
+author: "William Lovejoy"
+date: "4/8/2022"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+As a first foray into text analysis, I'll be using the following libraries to 
+perform bigram term frequency and sentiment analysis of Herman Melville's Moby 
+Dick. The sentiment analysis will be done using Bing et al. 
+<{10.1111/j.1467-8640.2012.00460.x}>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(gutenbergr)
+library(dplyr)
+library(stringr)
+library(tidytext)
+library(wordcloud)
+library(tidyverse)
+library(tidyr)
+library(ggplot2)
+library(Rcpp)
+library(igraph)
+library(widyr)
+```
+
+## Importing and Bigrams
+The text for the book will be fetched from the gutenberg library and loaded into
+R.
+
+```{r Imports}
+moby <- gutenberg_download(15, mirror = "https://gutenberg.pglaf.org/")
+```
+
+To start, I split the text into it's bigrams, separated them and removed bigrams
+where either word was a stop-word (such as: the, a, is, are, etc.). I removed 
+all NA's, counted the number of times each bigram appeared, and then reunited 
+the words.
+
+```{r Bigrams}
+moby_bigrams <- moby %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+  
+moby_separate <- moby_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ") 
+
+moby_filtered <- moby_separate %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         is.na(word1) == FALSE,
+         is.na(word2) == FALSE)
+  
+moby_counts <- moby_filtered %>%
+  count(word1, word2, sort = TRUE)
+
+moby_united <- moby_counts %>%
+  unite(bigram, word1, word2, sep = " ")
+
+head(moby_united)
+```
+
+Using the bind_tf_idf() function, I calculated the term frequency for each 
+bigram and created a new tibble for the data. I passed that data to ggplot so we
+can see which bigrams were the most frequent, and by how much.
+
+
+```{r TF_Plot1}
+moby_bigram_idf <-  moby_united %>%
+  mutate(book = "Moby Dick") %>%
+  bind_tf_idf(bigram, book, n)
+
+moby_bigram_idf %>%
+  subset(n > 15) %>%
+  ggplot(aes(reorder(bigram, tf), y = tf)) + geom_col() +
+  coord_flip() + theme(axis.text.x = element_text(angle = 90)) + 
+  xlab("Bigram") + ylab("tf") + labs(title = "Moby Dick Bigram Term Frequency")
+```
+
+We can see the the phrase "sperm whale" appears the most often by a large 
+margin, followed closely by "white whale" and "moby dick", all terms for the
+whale in the story and the driving force for the plot.
+
+## Sentiments
+
+Going back to the source text, we'll separate the data on individual words
+rather than bigrams. We'll also make a quick wordcloud (removing stop-words) of
+the text to see which singular words are the most common.
+
+```{r Tidying}
+moby_tidy <- moby %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text,
+                                     regex("^chapter [\\divxlc]",
+                                           ignore_case = TRUE)))) %>%
+  ungroup()
+
+tidy_moby <- moby_tidy %>%
+  unnest_tokens(word, text)
+
+head(tidy_moby)
+
+tidy_moby %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100))
+```
+
+As expected, "whale" is the most common word in the book.
+
+Now I find the sentiments for the individual words in the text using Bing et al.
+I index the book based off of line number and find the gross assigned sentiment
+for each section. I then used ggplot to look at the overall positivity vs.
+negativity of the book as the story progresses.
+
+```{r Sentiments}
+moby_sentiment <- tidy_moby %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(index = linenumber %/% 80, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+ggplot(moby_sentiment, aes(x = index, y = sentiment)) + 
+  geom_col(show.legend = FALSE) + xlab("Index") + ylab("Sentiment") +
+  labs(title = "Moby Dick Bing et al. Sentiment Analysis")
+```
+
+We can see that the story is, overall, largely negative. It has far more words
+with negative sentiments than positive ones, and even ends on a sorrowful note
+when Captain Ahab is entangled in his harpoon line and dragged down by Moby
+Dick along with the remains of his ship, the Pequod.
+
+## Correlations
+
+Now I'll use the widyr package to get a quick look at the correlations between
+words within the text. Once again, I remove stop-words from the text to make our
+analysis cleaner and more accurate.
+
+```{r Widyr, warning=FALSE}
+moby_section_words <- moby %>%
+  mutate(section = row_number() %/% 10) %>%
+  filter(section > 0) %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word)
+
+word_pairs <- moby_section_words %>%
+  pairwise_count(word, section, sort = TRUE)
+
+head(word_pairs)
+```
+
+We can see once again how often words such as "sperm", "whale", and "white" are 
+found near each other. But we can use this as a starting point to look at how 
+strongly correlated these appearance are. By using the pairwise_cor() function,
+we can see that words such as "moby" and "dick" have a correlation of ~.986. 
+And if we take some of the more interesting words from the story (such as moby,
+whale, ahab, queequeg, pequod, and harpoon), we can filter and graph them and 
+the words that they are most strongly correlated with.
+
+```{r Pairwise_cors}
+word_cors <- moby_section_words %>%
+  group_by(word) %>%
+  filter(n() > 20) %>%
+  pairwise_cor(word, section, sort = TRUE)
+
+head(word_cors)
+
+word_cors %>%
+  filter(item1 %in% c("moby", "whale", "ahab", "queequeg", "pequod", "harpoon")) %>%
+  group_by(item1) %>%
+  slice_max(correlation, n = 6) %>%
+  ungroup() %>%
+  mutate(item2 = reorder(item2, correlation)) %>%
+  ggplot(aes(item2, correlation)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Interesting Words and Pairwise Correlations", 
+       y = "Pairwise Words") +
+  facet_wrap(~ item1, scales = "free") +
+  coord_flip()
+```
