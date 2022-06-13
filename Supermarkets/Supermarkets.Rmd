@@ -1,0 +1,52 @@
+---
+title: "Supermarket Data EDA"
+author: "William Lovejoy"
+date: "6/13/2022"
+output: html_document
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(reshape2)
+```
+
+Quick and easy analysis of supermarket data pulled from [link](https://www.kaggle.com/datasets/surajjha101/stores-area-and-sales-data).
+
+```{r import}
+df <- read.csv("C:\\Users\\William Lovejoy\\Documents\\Codes\\R\\DataScience\\SupermarketData\\Stores.csv")
+glimpse(df)
+```
+
+```{r fig1}
+plot(df[, -c(1)])
+```
+Right away there is a strong correlation between a stores area and the number of
+items it has available. 
+
+```{r expansion}
+df$Monthly_Customer_Count <- df$Daily_Customer_Count * 30
+df$Average_Daily_Sales <- df$Store_Sales / 30
+```
+
+
+After breaking down the data a bit more to see how much a store tends to make
+each month, as well as how many customers they tend to receive monthly.
+
+Next we can calculate the actual correlative values for the different variables
+and plot them with a tile graph.
+```{r fig2}
+correlated <- df[, -c(1)] %>%
+  cor() %>%
+  melt()
+
+ggplot(correlated, aes(x = Var1, y = Var2, fill = value)) + 
+  scale_fill_gradient2(low = "antiquewhite",
+                       mid = "gold",
+                       high = "firebrick") +
+  geom_tile(color = "black") +
+  geom_text(aes(label = round(value, 2)), size = 5) +
+  theme(axis.text.x = element_text(angle = 90), axis.title = element_blank()) +
+  labs(title = "Correlation of Supermarket Factors")
+```
+
+
