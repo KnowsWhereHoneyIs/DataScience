@@ -1,0 +1,207 @@
+---
+title: "Diamond Prices 2022"
+author: "William Lovejoy"
+date: "7/28/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 6.5, message = FALSE, 
+                      warning = FALSE, error = FALSE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(scales)
+library(ggridges)
+library(equatiomatic)
+library(cowplot)
+library(caret)
+library(arm)
+library(car)
+```
+
+```{r data_load_and_clean}
+df <- read.csv("C:\\Users\\William Lovejoy\\Documents\\Codes\\R\\DataScience\\Diamonds Prices2022.csv")
+df$color <- factor(as.factor(df$color), levels = c("J", "I", "H", "G", "F", 
+                                                   "E", "D"))
+df$clarity <- factor(as.factor(df$clarity), levels = c("I1", "SI2", "SI1", 
+                                                       "VS2", "VS1", "VVS2",
+                                                       "VVS1", "IF"))
+df$cut <- factor(as.factor(df$cut), levels = c("Fair", "Good", "Very Good",
+                                               "Premium", "Ideal"))
+glimpse(df)
+```
+
+We load in our diamond price dataset, and then convert the cut, clarity, and 
+color variables to factors. We’ll also take this opportunity to set our factor 
+levels from bottom to top. So color “D” is the highest, clarity “IF” is the 
+clearest, and cut “Ideal” is the best. This will make it so all graphs with 
+these variables put the highest ranked levels at the top unless otherwise stated.
+
+```{r EDA1}
+df %>%
+  ggplot(aes(x = carat, y = price, group = color, color = color)) +
+  geom_point(position = "jitter", alpha = .8) + geom_smooth(se = FALSE) +
+  scale_y_continuous(labels = label_number(prefix = "$", suffix = "k",
+                                           scale = 1 / 1e3)) +
+  labs(title = "Price per Carat by Diamond Color: 2022", x = "Carat",
+       y = "Price", caption = "Fig. 1")
+```
+
+We can see here a generally positive relationship with diamond caret and diamond
+price. We can also see that the slope of the lines for each diamond color 
+category is steeper as the diamonds color improves.
+
+```{r, fig.height=8}
+priceByClarity <- df %>%
+  ggplot(aes(x = price, y = clarity, fill = clarity)) + geom_density_ridges2() +
+  scale_color_brewer(palette = "Dark2")
+
+priceByCut <- df %>%
+  ggplot(aes(x = price, y = cut, fill = cut)) + geom_density_ridges2() +
+  scale_color_brewer(palette = "Dark2")
+
+priceByColor <- df %>%
+  ggplot(aes(x = price, y = color, fill = color)) + geom_density_ridges2() +
+  scale_color_brewer(palette = "Dark2")
+
+title <- ggdraw() + 
+  draw_label(
+  "Distribution of Diamond Prices by Categorical Variables", x = 0, hjust = 0, 
+  size = 14)
+
+plot_cols <- plot_grid(priceByClarity, priceByCut, priceByColor, ncol = 1, 
+                       align = "v", labels = c("A", "B", "C"), label_size = 12)
+
+plot_grid(title, plot_cols, rel_heights = c(0.1,1), ncol = 1, align = "v")
+```
+
+As we break down our categorical variables, we can again see that the higher 
+valued the factor, the more dense the price distribution is. Lower rated factors
+such as “J” coloring, “Fair” cuts, and “I1” clarity have a much wider spread. A 
+large reason for this, if we look back at Fig. 1, is because diamonds with these
+poor qualities tend to have larger carats.
+
+```{r, fig.height = 8}
+caratByClarity <- df %>%
+  ggplot(aes(x = carat, y = clarity, fill = clarity)) + geom_density_ridges2() +
+  scale_color_brewer(palette = "Dark2")
+
+caratByCut <- df %>%
+  ggplot(aes(x = carat, y = cut, fill = cut)) + geom_density_ridges2() +
+  scale_color_brewer(palette = "Dark2")
+
+caratByColor <- df %>%
+  ggplot(aes(x = carat, y = color, fill = color)) + geom_density_ridges2() +
+  scale_color_brewer(palette = "Dark2")
+
+title <- ggdraw() + 
+  draw_label(
+  "Distribution of Diamond Carats by Categorical Variables", x = 0, hjust = 0, 
+  size = 14)
+
+plot_cols_2 <- plot_grid(caratByClarity, caratByCut, caratByColor, ncol = 1, 
+                         align = "v", labels = c("A", "B", "C"), 
+                         label_size = 12)
+
+plot_grid(title, plot_cols_2, rel_heights = c(0.1,1), ncol = 1, align = "v")
+```
+
+As we can see, the lower quality a diamond is, the more spread out it is in 
+terms of carat distribution.
+
+```{r}
+priceByX <- df %>%
+  ggplot(aes(x = x, y = price)) + geom_point(position = "jitter") +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(labels = label_number(prefix = "$", suffix = "k",
+                                           scale = 1 / 1e3))
+
+priceByY <- df %>%
+  ggplot(aes(x = y, y = price)) + geom_point(position = "jitter") +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(labels = label_number(prefix = "$", suffix = "k",
+                                           scale = 1 / 1e3))
+
+priceByZ <- df %>%
+  ggplot(aes(x = z, y = price)) + geom_point(position = "jitter") +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(labels = label_number(prefix = "$", suffix = "k",
+                                           scale = 1 / 1e3))
+
+priceByDepth <- df %>%
+  ggplot(aes(x = depth, y = price)) + geom_point(position = "jitter") +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(labels = label_number(prefix = "$", suffix = "k",
+                                           scale = 1 / 1e3))
+
+priceByTable <- df %>%
+  ggplot(aes(x = table, y = price)) + geom_point(position = "jitter") +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(labels = label_number(prefix = "$", suffix = "k",
+                                           scale = 1 / 1e3))
+
+priceByCarat <- df %>%
+  ggplot(aes(x = carat, y = price)) + geom_point(position = "jitter") +
+  geom_smooth(method = "lm") +
+  scale_y_continuous(labels = label_number(prefix = "$", suffix = "k",
+                                           scale = 1 / 1e3))
+
+plot_grid(priceByX, priceByY, priceByZ, 
+          priceByDepth, priceByTable, priceByCarat, ncol = 3)
+```
+
+A quick look at the scatter plots comparing the other measured variables to 
+price shows us some fairly strong correlations with all of them except depth. 
+However, if we calculate correlation values for all non-categorical factors, we
+can take all with a value over 0.75 to craft our linear regression model.
+
+```{r}
+correlations <- cor(df[, c(2, 6:11)])
+highlyCorrelated <- findCorrelation(correlations, cutoff = .75)
+cat("Highly Correlated variables (>.75) are:", names(df[, -highlyCorrelated]))
+```
+
+```{r}
+model <- lm(log(price) ~ carat + x + y + z + cut + color, data = df)
+display(model)
+```
+
+Our model gives us a strong R^2^ of 0.94 after log transforming our prices. And by
+looking at our QQ and Residual KDE plots, we can see fat tails but very little 
+skew in our data.
+
+```{r}
+qqPlot(model)
+```
+
+```{r}
+plot(density(model[['residuals']]), main = "Residual KDE Plot", 
+     xlab = "Residual Value")
+```
+
+
+```{r}
+extract_eq(model, use_coefs = TRUE, wrap = TRUE)
+```
+
+This is the equation for our model.
+
+```{r}
+imp <- varImp(model) %>%
+  rownames_to_column("Variable") %>%
+  mutate(Variable = as.factor(Variable), Overall = as.integer(Overall))
+
+imp$Variable <- reorder(imp$Variable, imp$Overall)
+
+
+ggplot(imp, aes(x = Overall, y = Variable)) + 
+  geom_segment(aes(y = Variable, yend = Variable, x = 0, xend = Overall)) + 
+  geom_point(size = 5, color = "black") +
+  labs(title = "Overall Variable Importance") 
+
+```
+
+And this shows which variables are the most important to determining a diamonds
+price.
